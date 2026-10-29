@@ -1,0 +1,14 @@
+{
+  "domain": "ark_home",
+  "name": "ARK Home Monitor",
+  "codeowners": ["@arkhome"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://arkhome.uk/smart-home",
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://arkhome.uk/contact",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}
