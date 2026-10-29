@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to ARK Home",
+        "description": "Enter the pairing code from the ARK Home workspace (Monitoring → system). This lets ARK Home watch this system's health and alert our team to problems. No camera images, locations or passwords are sent.",
+        "data": { "code": "Pairing code" }
+      }
+    },
+    "error": {
+      "invalid_code": "That pairing code wasn't recognised or has expired. Ask ARK Home for a new one.",
+      "cannot_connect": "Couldn't reach ARK Home. Check the internet connection and try again."
+    },
+    "abort": { "already_configured": "This system is already connected to ARK Home." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ARK Home Monitor options",
+        "data": { "allow_restart": "Allow ARK Home to restart Home Assistant remotely" },
+        "description": "Only turn this on if you have agreed it with ARK Home."
+      }
+    }
+  }
+}
