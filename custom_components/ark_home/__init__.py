@@ -284,13 +284,13 @@ class ArkMonitor:
                     timeout=30,
                 ) as resp:
                     if resp.status != 200:
-                        _LOGGER.warning("ARK Home  check-in refused (%s)", resp.status)
+                        _LOGGER.warning("ARK Home check-In refused (%s)", resp.status)
                         return
                     data = await resp.json(content_type=None)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("ARK Home check-in failed: %s", err)
                 return
-            # Delivered: clear what was sent.
+                # Delivered: clear what was sent.
             self.events = self.events[len(payload["events"]):]
             self.results = self.results[len(payload["command_results"]):]
             self.errors.count = 0
