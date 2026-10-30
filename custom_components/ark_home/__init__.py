@@ -204,7 +204,7 @@ class ArkMonitor:
                             "name": str(state.attributes.get("friendly_name") or state.entity_id)[:255],
                             "value": round(float(state.state), 3),
                             "unit": unit,
-                       })
+                        })
                     except ValueError:
                         pass
             if state.domain == "binary_sensor" and state.state == "on" and state.attributes.get("device_class") in CLEARABLE_BINARY:
@@ -263,7 +263,7 @@ class ArkMonitor:
                 "allow_restart": self.allow_restart,
                 "system": await self.hass.async_add_executor_job(self._system_stats),
                 **self._collect(),
-                "errors": {"count": self.errors.count, "recent": list(self.errors.lines)[-101=},
+                "errors": {"count": self.errors.count, "recent": list(self.errors.lines)[-10:]},
                 "events": self.events[:50],
                 "command_results": self.results[:20],
             }
@@ -284,13 +284,13 @@ class ArkMonitor:
                     timeout=30,
                 ) as resp:
                     if resp.status != 200:
-                        _LOGGER.warning("ARK Home check-In refused (%s)", resp.status)
+                        _LOGGER.warning("ARK Home check-in refused (%s)", resp.status)
                         return
                     data = await resp.json(content_type=None)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("ARK Home check-in failed: %s", err)
                 return
-                # Delivered: clear what was sent.
+            # Delivered: clear what was sent.
             self.events = self.events[len(payload["events"]):]
             self.results = self.results[len(payload["command_results"]):]
             self.errors.count = 0
