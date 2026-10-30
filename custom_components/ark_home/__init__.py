@@ -37,6 +37,24 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 SECURITY_BINARY = {"tamper": "tamper", "smoke": "smoke", "moisture": "water_leak", "safety": "panic"}
+CLEARABLE_BINARY = {"moisture": "water_leak", "smoke": "smoke"}
+POWER_UNITS = {"W", "kW", "A", "mA"}
+
+
+def _to_amps(value: Any, unit: str | None) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if unit == "A":
+        return v
+    if unit == "mA":
+        return v / 1000
+    if unit == "W":
+        return v / 230
+    if unit == "kW":
+        return v * 1000 / 230
+    return None
 
 
 class _ErrorCollector(logging.Handler):
@@ -67,6 +85,8 @@ class ArkMonitor:
         self._lock = asyncio.Lock()
         self._unsubs: list[Any] = []
         self._pending_send = None
+        self.watch: dict[str, Any] | None = None
+        self._last_power_push = 0.0
 
     @property
     def allow_restart(self) -> bool:
@@ -93,6 +113,19 @@ class ArkMonitor:
         old = event.data.get("old_state")
         if new is None or (old is not None and old.state == new.state):
             return
+        if self.watch and new.entity_id == self.watch.get("entity_id"):
+            amps = _to_amps(new.state, new.attributes.get("unit_of_measurement"))
+            if amps is not None and amps >= float(self.watch.get("warn_amps") or 0):
+                # High use: report at most once a minute so ARK can time how long it lasts.
+                if time.monotonic() - self._last_power_push >= 60:
+                    self._last_power_push = time.monotonic()
+                    self._schedule_send()
+            return
+        if new.domain == "binary_sensor" and new.state == "off" and old is not None and old.state == "on" \
+                and new.attributes.get("device_class") in CLEARABLE_BINARY:
+            # Leak/smoke cleared: report so the customer gets an "all clear".
+            self._schedule_send()
+            return
         kind = None
         if new.domain == "alarm_control_panel" and new.state == "triggered":
             kind = "alarm_triggered"
@@ -107,6 +140,9 @@ class ArkMonitor:
             "at": new.last_changed.isoformat(),
         })
         # Urgent: report within seconds, batching bursts.
+        self._schedule_send()
+
+    def _schedule_send(self) -> None:
         if self._pending_send is None:
             self._pending_send = async_call_later(self.hass, 5, self._send_now)
 
@@ -141,7 +177,7 @@ class ArkMonitor:
     def _collect(self) -> dict[str, Any]:
         hass = self.hass
         registry = er.async_get(hass)
-        unavailable, batteries, updates = [], [], []
+        unavailable, batteries, updates, power, active = [], [], [], [], []
         total = 0
         backup_last = None
         for state in hass.states.async_all():
@@ -159,6 +195,24 @@ class ArkMonitor:
                 continue
             if state.entity_id.startswith("sensor.backup_last_successful") and state.state not in (STATE_UNAVAILABLE, "unknown"):
                 backup_last = state.state
+            if state.domain == "sensor" and state.attributes.get("device_class") in ("power", "current"):
+                unit = state.attributes.get("unit_of_measurement")
+                if unit in POWER_UNITS:
+                    try:
+                        power.append({
+                            "entity_id": state.entity_id,
+                            "name": str(state.attributes.get("friendly_name") or state.entity_id)[:255],
+                            "value": round(float(state.state), 3),
+                            "unit": unit,
+                        })
+                    except ValueError:
+                        pass
+            if state.domain == "binary_sensor" and state.state == "on" and state.attributes.get("device_class") in CLEARABLE_BINARY:
+                active.append({
+                    "type": CLEARABLE_BINARY[state.attributes.get("device_class")],
+                    "entity_id": state.entity_id,
+                    "name": str(state.attributes.get("friendly_name") or state.entity_id)[:255],
+                })
             if state.domain not in MONITORED_DOMAINS:
                 continue
             if entry and entry.entity_category is not None:
@@ -188,6 +242,8 @@ class ArkMonitor:
             "updates": updates[:200],
             "repairs": repairs[:200],
             "backup": {"last_success": backup_last},
+            "power_sensors": power[:50],
+            "active_safety": active[:100],
         }
 
     # ---- transport -------------------------------------------------------
@@ -235,6 +291,8 @@ class ArkMonitor:
             self.results = self.results[len(payload["command_results"]):]
             self.errors.count = 0
             commands = data.get("commands") or []
+            watch = data.get("watch")
+            self.watch = watch if isinstance(watch, dict) and watch.get("entity_id") else None
         if commands:
             await self._run_commands(commands)
 
