@@ -1,7 +1,7 @@
 """Constants for ARK Home Monitor."""
 
 DOMAIN = "ark_home"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 API_BASE = "https://arkhome.uk/api/public/ha"
 
 CONF_SYSTEM_ID = "system_id"
