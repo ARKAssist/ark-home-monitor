@@ -223,7 +223,13 @@ class ArkMonitor:
                 continue
             total += 1
             if state.state == STATE_UNAVAILABLE:
+                integ = None
+                if entry:
+                    ce = hass.config_entries.async_get_entry(entry.config_entry_id) if entry.config_entry_id else None
+                    integ = ce.domain if ce else entry.platform
                 unavailable.append({
+                    "integration": integ,
+                    "integration_title": (str(ce.title)[:255] if entry and entry.config_entry_id and ce else None),
                     "entity_id": state.entity_id,
                     "name": str(state.attributes.get("friendly_name") or state.entity_id)[:255],
                     "domain": state.domain,
@@ -240,7 +246,24 @@ class ArkMonitor:
         for issue in ir.async_get(hass).issues.values():
             if issue.active and not issue.dismissed_version:
                 repairs.append({"domain": issue.domain, "issue_id": issue.issue_id[:255], "severity": str(issue.severity)})
+        integrations = []
+        for ce in hass.config_entries.async_entries():
+            if ce.disabled_by or ce.domain == DOMAIN:
+                continue
+            try:
+                reauth = any(True for _ in ce.async_get_active_flows(hass, {"reauth"}))
+            except Exception:  # noqa: BLE001
+                reauth = False
+            integrations.append({
+                "entry_id": ce.entry_id,
+                "domain": ce.domain,
+                "title": str(ce.title)[:255],
+                "state": str(getattr(ce.state, "value", ce.state))[:40],
+                "reason": (str(ce.reason)[:300] if getattr(ce, "reason", None) else None),
+                "needs_reauth": reauth,
+            })
         return {
+            "integrations": integrations[:300],
             "entities": {"total": total, "unavailable": unavailable[:500]},
             "batteries": batteries[:500],
             "updates": updates[:200],
@@ -317,6 +340,15 @@ class ArkMonitor:
                     else:
                         raise RuntimeError("No backup service available")
                     self.results.append({"id": cid, "ok": True, "result": {"started": True}})
+                elif kind == "reload_entry":
+                    if not self.allow_restart:
+                        raise RuntimeError("Remote reload not allowed on this system")
+                    entry_id = (cmd.get("params") or {}).get("entry_id")
+                    target = self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
+                    if not target or target.domain == DOMAIN:
+                        raise RuntimeError("Integration not found")
+                    ok = await self.hass.config_entries.async_reload(target.entry_id)
+                    self.results.append({"id": cid, "ok": bool(ok), "result": {"reloaded": target.title, "state": str(getattr(target.state, "value", target.state))}})
                 elif kind == "restart":
                     if not self.allow_restart:
                         raise RuntimeError("Remote restart not allowed on this system")
